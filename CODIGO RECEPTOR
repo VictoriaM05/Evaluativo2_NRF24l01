@@ -1,0 +1,97 @@
+#include <SPI.h>
+#include <nRF24L01.h>
+#include <RF24.h>
+
+#define CE_PIN 16
+#define CSN_PIN 10
+#define SPI_SCK 12
+#define SPI_MISO 13
+#define SPI_MOSI 11
+
+#define LED_PIN 5
+#define BUZZER_PIN 4
+#define BUTTON_PIN 6
+
+RF24 radio(CE_PIN, CSN_PIN);
+
+const byte address[6] = "00010";
+
+bool estadoBotonAnterior = HIGH;
+bool puertaCerrada = false;
+
+void setup() {
+
+  Serial.begin(115200);
+  delay(900);
+
+  pinMode(LED_PIN, OUTPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
+  SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI);
+
+  if (!radio.begin()) {
+    Serial.println("Error NRF24");
+    while (1);
+  }
+
+  radio.setPALevel(RF24_PA_MIN);
+  radio.setDataRate(RF24_250KBPS);
+  radio.setChannel(77);
+
+  radio.openReadingPipe(1, address);
+  radio.openWritingPipe(address);
+
+  radio.startListening();
+
+  Serial.println("Receptor listo");
+}
+
+void loop() {
+
+  //RECIBIR ALERTA
+  if (radio.available()) {
+
+    char recibido[10] = "";
+    radio.read(&recibido, sizeof(recibido));
+
+    Serial.print("Mensaje: ");
+    Serial.println(recibido);
+
+    if (strcmp(recibido, "ALERTA") == 0) {
+      digitalWrite(LED_PIN, HIGH);
+      digitalWrite(BUZZER_PIN, HIGH);
+    }
+  }
+
+  //BOTÓN → alternar puerta
+  bool estadoBoton = digitalRead(BUTTON_PIN);
+
+  if (estadoBoton == LOW && estadoBotonAnterior == HIGH) {
+
+    radio.stopListening();
+
+    if (puertaCerrada) {
+      Serial.println("Enviando ABRIR...");
+      char mensaje[] = "ABRIR";
+      radio.write(mensaje, strlen(mensaje) + 1);
+    } else {
+      Serial.println("Enviando CERRAR...");
+      char mensaje[] = "CERRAR";
+      radio.write(mensaje, strlen(mensaje) + 1);
+    }
+
+    delay(50);
+    radio.startListening();
+
+    puertaCerrada = !puertaCerrada;
+
+    delay(300);
+  }
+  estadoBotonAnterior = estadoBoton;
+
+  // apagar alarma manual (si se presiona botón)
+  if (estadoBoton == LOW) {
+    digitalWrite(LED_PIN, LOW);
+    digitalWrite(BUZZER_PIN, LOW);
+  }
+}
