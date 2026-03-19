@@ -1,0 +1,73 @@
+#include <SPI.h>
+#include <nRF24L01.h>
+#include <RF24.h>
+#include <Servo.h>
+// NRF24
+#define CE_PIN 7
+#define CSN_PIN 8
+// Ultrasonico
+#define TRIG_PIN 3
+#define ECHO_PIN 2
+// Servo
+#define SERVO_PIN 5
+RF24 radio(CE_PIN, CSN_PIN);
+Servo servo;
+const byte address[6] = "00010";
+long duracion;
+int distancia;
+void setup() {
+  Serial.begin(9600);
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+
+  servo.attach(SERVO_PIN);
+  servo.write(0); // puerta abierta
+  if (!radio.begin()) {
+    Serial.println("ERROR nRF24");
+    while (1);
+  }
+  radio.setPALevel(RF24_PA_MAX);
+  radio.setDataRate(RF24_250KBPS);
+  radio.setChannel(77);
+  radio.openWritingPipe(address);
+  radio.openReadingPipe(1, address);
+  radio.startListening();
+  Serial.println("Transmisor listo...");
+}
+void loop() {
+  //  MEDIR DISTANCIA
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+  duracion = pulseIn(ECHO_PIN, HIGH);
+  distancia = duracion * 0.034 / 2;
+  // DETECTAR ANIMAL
+  if (distancia > 0 && distancia < 10) {
+    radio.stopListening();
+    char mensaje[] = "ALERTA";
+    radio.write(mensaje, strlen(mensaje) + 1);
+    Serial.println("ALERTA enviada");
+    delay(50);
+    radio.startListening();
+  }
+  // RECIBIR ORDENES
+  if (radio.available()) {
+    char recibido[10] = "";
+    radio.read(&recibido, sizeof(recibido));
+    Serial.print("Recibido: ");
+    Serial.println(recibido);
+    if (strcmp(recibido, "CERRAR") == 0) {
+      Serial.println("Cerrando puerta...");
+      servo.write(90);
+      delay(2000);
+    }
+    if (strcmp(recibido, "ABRIR") == 0) {
+      Serial.println("Abriendo puerta...");
+      servo.write(0);
+      delay(2000);
+    }
+  }
+  delay(300);
+}
